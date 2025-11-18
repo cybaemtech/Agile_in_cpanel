@@ -438,6 +438,9 @@ export function EditItemModal({
                         {projectTeamMembers.map(user => (
                           <SelectItem key={user.id} value={user.id.toString()}>
                             {user.fullName || user.username}
+                            {user.role && ['ADMIN', 'SCRUM_MASTER'].includes(user.role) && (
+                              <span className="text-xs text-neutral-500 ml-2">({user.role})</span>
+                            )}
                           </SelectItem>
                         ))}
                       </SelectContent>

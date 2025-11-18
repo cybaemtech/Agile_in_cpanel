@@ -409,7 +409,7 @@ export function CreateItemModal({
                           { value: "unassigned", label: "Unassigned" },
                           ...projectTeamMembers.map(user => ({
                             value: user.id.toString(),
-                            label: user.fullName ? `${user.fullName} (${user.username})` : user.username
+                            label: `${user.fullName ? `${user.fullName} (${user.username})` : user.username}${user.role && ['ADMIN', 'SCRUM_MASTER'].includes(user.role) ? ` - ${user.role}` : ''}`
                           }))
                         ]}
                         value={field.value?.toString() || "unassigned"}

@@ -303,12 +303,14 @@ function getProjectTeamMembers($conn, $projectId) {
         }
         $teamId = $row['team_id'];
 
-        // Get users in the team
+        // Get users in the team AND include all ADMIN and SCRUM_MASTER users
         $stmt = $conn->prepare("
-            SELECT u.id, u.username, u.full_name, u.email, u.avatar_url, u.is_active, u.user_role
-            FROM team_members tm
-            JOIN users u ON tm.user_id = u.id
-            WHERE tm.team_id = ?
+            SELECT DISTINCT u.id, u.username, u.full_name, u.email, u.avatar_url, u.is_active, u.user_role
+            FROM users u
+            LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = ?
+            WHERE (tm.user_id IS NOT NULL OR u.user_role IN ('ADMIN', 'SCRUM_MASTER'))
+            AND u.is_active = 1
+            ORDER BY u.user_role DESC, u.full_name ASC
         ");
         $stmt->execute([$teamId]);
         $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
