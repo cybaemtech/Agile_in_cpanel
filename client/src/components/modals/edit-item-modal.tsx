@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { 
   Form, 
   FormControl, 
@@ -424,27 +425,40 @@ export function EditItemModal({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Assignee</FormLabel>
-                    <Select
-                      value={field.value?.toString() || "unassigned"}
-                      onValueChange={val => field.onChange(val === "unassigned" ? null : parseInt(val))}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select assignee" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="unassigned">Unassigned</SelectItem>
-                        {projectTeamMembers.map(user => (
-                          <SelectItem key={user.id} value={user.id.toString()}>
-                            {user.fullName || user.username}
-                            {user.role && ['ADMIN', 'SCRUM_MASTER'].includes(user.role) && (
-                              <span className="text-xs text-neutral-500 ml-2">({user.role})</span>
-                            )}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <Combobox
+                        options={[
+                          { value: "unassigned", label: "Unassigned" },
+                          ...projectTeamMembers.map(user => {
+                            const name = user.fullName || user.username;
+                            const username = user.fullName ? `@${user.username}` : '';
+                            let roleDisplay = '';
+                            
+                            if (user.role === 'ADMIN') {
+                              roleDisplay = '  Admin';
+                            } else if (user.role === 'SCRUM_MASTER') {
+                              roleDisplay = ' Scrum Master';
+                            }
+                            
+                            return {
+                              value: user.id.toString(),
+                              label: `${name}${username}${roleDisplay}`,
+                              searchFields: [
+                                user.fullName || '',
+                                user.username || '',
+                                user.email || '',
+                                user.role || ''
+                              ].filter(Boolean)
+                            };
+                          })
+                        ]}
+                        value={field.value?.toString() || "unassigned"}
+                        onValueChange={(value) => field.onChange(value && value !== "unassigned" ? parseInt(value) : null)}
+                        placeholder="Search and select assignee..."
+                        searchPlaceholder="Search team members..."
+                        emptyText="No team members found."
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}

@@ -20,6 +20,7 @@ import {
 export interface ComboboxOption {
   value: string 
   label: string
+  searchFields?: string[] // Additional fields to search in
   disabled?: boolean
 }
 
@@ -52,9 +53,39 @@ export function Combobox({
   // Filter options based on search
   const filteredOptions = React.useMemo(() => {
     if (!searchValue) return options
-    return options.filter((option) =>
-      option.label.toLowerCase().includes(searchValue.toLowerCase())
-    )
+    const searchLower = searchValue.toLowerCase().trim()
+    if (!searchLower) return options
+    
+    const filtered = options.filter((option) => {
+      // Search in label
+      if (option.label && option.label.toLowerCase().includes(searchLower)) {
+        return true
+      }
+      // Search in additional search fields if provided
+      if (option.searchFields && Array.isArray(option.searchFields)) {
+        return option.searchFields.some(field => 
+          field && typeof field === 'string' && field.toLowerCase().includes(searchLower)
+        )
+      }
+      return false
+    })
+    
+    // Debug logging for search issues
+    if (searchValue && filtered.length === 0 && options.length > 0) {
+      console.log('🔍 Search Debug:', {
+        searchValue,
+        searchLower,
+        totalOptions: options.length,
+        sampleOption: options[0],
+        sampleOptionLabel: options[0]?.label,
+        sampleOptionSearchFields: options[0]?.searchFields,
+        filteredCount: filtered.length,
+        firstOptionMatch: options[0]?.label?.toLowerCase()?.includes(searchLower),
+        firstOptionSearchFieldsMatch: options[0]?.searchFields?.some(field => field.toLowerCase().includes(searchLower))
+      })
+    }
+    
+    return filtered
   }, [options, searchValue])
 
   // Find the selected option
@@ -68,19 +99,21 @@ export function Combobox({
           role="combobox"
           aria-expanded={open}
           className={cn(
-            "w-full justify-between",
+            "w-full justify-between text-left font-normal",
             !selectedOption && "text-muted-foreground",
             className
           )}
           disabled={disabled}
         >
-          {selectedOption ? selectedOption.label : placeholder}
+          <span className="truncate">
+            {selectedOption ? selectedOption.label : placeholder}
+          </span>
           {required && !selectedOption && <span className="text-red-500 ml-1">*</span>}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-        <Command>
+        <Command shouldFilter={false}>
           <CommandInput 
             placeholder={searchPlaceholder} 
             value={searchValue}
@@ -94,6 +127,7 @@ export function Combobox({
                   key={option.value}
                   value={option.value}
                   disabled={option.disabled}
+                  className="flex items-center justify-between cursor-pointer"
                   onSelect={(currentValue) => {
                     // Handle selection
                     if (currentValue === value) {
@@ -106,13 +140,15 @@ export function Combobox({
                     setSearchValue("") // Clear search when selecting
                   }}
                 >
-                  <Check
-                    className={cn(
-                      "mr-2 h-4 w-4",
-                      value === option.value ? "opacity-100" : "opacity-0"
-                    )}
-                  />
-                  {option.label}
+                  <div className="flex items-center">
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        value === option.value ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                    <span className="truncate">{option.label}</span>
+                  </div>
                 </CommandItem>
               ))}
             </CommandGroup>

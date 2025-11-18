@@ -320,24 +320,23 @@ export function TeamMembersModal({ isOpen, onClose, team, onMembersChange, onTea
     <Dialog open={isOpen} onOpenChange={onClose}>
     <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center justify-between">
-            <div className="flex items-center">
-              <Users className="h-5 w-5 mr-2" />
-              Manage Team Members - {team.name}
-            </div>
-            {(isAdmin || currentUser?.role === 'SCRUM' || currentUser?.role === 'SCRUM_MASTER') && (
+          <DialogTitle className="flex items-center">
+            <Users className="h-5 w-5 mr-2" />
+            Manage Team Members - {team.name}
+          </DialogTitle>
+          {(isAdmin || currentUser?.role === 'SCRUM' || currentUser?.role === 'SCRUM_MASTER') && (
+            <div className="flex justify-end pt-2">
               <Button
                 variant="destructive"
                 size="sm"
                 onClick={() => setShowDeleteDialog(true)}
                 disabled={deleteTeamMutation.isPending}
-                className="ml-4"
               >
                 <Trash2 className="h-4 w-4 mr-1" />
                 Delete Team
               </Button>
-            )}
-          </DialogTitle>
+            </div>
+          )}
         </DialogHeader>
 
   <div className="space-y-8">
@@ -380,7 +379,7 @@ export function TeamMembersModal({ isOpen, onClose, team, onMembersChange, onTea
                     <SelectItem value="MEMBER">Member</SelectItem>
                     <SelectItem value="LEAD">Team Lead</SelectItem>
                     <SelectItem value="SCRUM_MASTER">Scrum Master</SelectItem>
-                    <SelectItem value="MANAGER">Project Manager</SelectItem>
+                    <SelectItem value="MANAGER">PRJ/PRD Manager</SelectItem>
                     <SelectItem value="ADMIN">Administrator</SelectItem>
                   </SelectContent>
                 </Select>
@@ -412,7 +411,7 @@ export function TeamMembersModal({ isOpen, onClose, team, onMembersChange, onTea
             <h3 className="font-medium text-blue-800 mb-2">Access Levels</h3>
             <div className="text-sm text-blue-700 space-y-1">
               <p><strong>Administrator:</strong> Full access - Can manage teams, create all work items, delete teams</p>
-              <p><strong>Project Manager:</strong> Can add team members, create EPIC and FEATURE work items</p>
+              <p><strong>PRJ/PRD Manager:</strong> Can add team members, create EPIC and FEATURE work items</p>
               <p><strong>Scrum Master:</strong> Can manage team activities, facilitate sprints, create EPIC and FEATURE work items</p>
               <p><strong>Team Lead:</strong> Can create EPIC and FEATURE work items, lead team activities</p>
               <p><strong>Member:</strong> Can create STORY, TASK, and BUG work items</p>
@@ -459,7 +458,7 @@ export function TeamMembersModal({ isOpen, onClose, team, onMembersChange, onTea
                               <SelectItem value="MEMBER">Member</SelectItem>
                               <SelectItem value="LEAD">Team Lead</SelectItem>
                               <SelectItem value="SCRUM_MASTER">Scrum Master</SelectItem>
-                              <SelectItem value="MANAGER">Project Manager</SelectItem>
+                              <SelectItem value="MANAGER">PRJ/PRD Manager</SelectItem>
                               <SelectItem value="ADMIN">Administrator</SelectItem>
                             </SelectContent>
                           </Select>

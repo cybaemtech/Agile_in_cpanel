@@ -472,8 +472,8 @@ export default function ProjectBugReports() {
                               </div>
                             </td>
                             <td className="p-3">
-                              {/* Show actions only for the creator of the bug report */}
-                              {currentUser && r.created_by === currentUser.id ? (
+                              {/* Show actions for the creator of the bug report OR admin/scrum master */}
+                              {currentUser && (r.created_by === currentUser.id || isAdminOrScrum) ? (
                                 editingId === r.id ? (
                                   <div className="flex gap-1">
                                     <Button 

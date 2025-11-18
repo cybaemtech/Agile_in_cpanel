@@ -1,4 +1,5 @@
 import { useState } from "react";
+import * as React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -64,7 +65,7 @@ export function CreateItemModal({
   currentProject
 }: CreateItemModalProps) {
   const { toast } = useToast();
-  const [selectedType, setSelectedType] = useState<string>("EPIC");
+  const [selectedType, setSelectedType] = useState<string>("STORY");
   // Track selected project for dynamic assignee list
   const [selectedProjectId, setSelectedProjectId] = useState<number>(currentProject?.id || (projects.length > 0 ? projects[0].id : 0));
 
@@ -75,11 +76,13 @@ export function CreateItemModal({
   });
 
   // Fetch project team members for assignee dropdown
-  const { data: projectTeamMembers = [] } = useQuery<User[]>({
+  const { data: projectTeamMembers = [], isLoading: teamMembersLoading, error: teamMembersError } = useQuery({
     queryKey: [`/projects/${selectedProjectId}/team-members`],
     queryFn: async () => {
       if (!selectedProjectId) return [];
+      console.log(' Fetching team members for project:', selectedProjectId);
       const members = await apiGet(`/projects/${selectedProjectId}/team-members`);
+      console.log(' Team members fetched:', members);
       return members;
     },
     enabled: !!selectedProjectId && isOpen
@@ -90,6 +93,16 @@ export function CreateItemModal({
   const allowedTypes = isAdminOrScrum
     ? ["EPIC", "FEATURE", "STORY", "TASK", "BUG"]
     : ["STORY", "TASK", "BUG"];
+  
+  // Set default type based on user permissions
+  const defaultType = isAdminOrScrum ? "EPIC" : "STORY";
+  
+  // Update selected type when user role changes or component mounts
+  React.useEffect(() => {
+    if (currentUser && !allowedTypes.includes(selectedType)) {
+      setSelectedType(defaultType);
+    }
+  }, [currentUser, allowedTypes, selectedType, defaultType]);
   
   // Only show valid parent options based on selected type and project
   const getValidParents = () => {
@@ -116,7 +129,7 @@ export function CreateItemModal({
       title: "",
       description: "",
       tags: "",
-      type: selectedType,
+      type: defaultType,
       status: "TODO",
       priority: "MEDIUM",
       projectId: selectedProjectId,
@@ -328,7 +341,12 @@ export function CreateItemModal({
                       <Combobox
                         options={projects.map(project => ({
                           value: project.id.toString(),
-                          label: project.name
+                          label: project.name,
+                          searchFields: [
+                            project.name || '',
+                            project.key || '',
+                            project.description || ''
+                          ].filter(Boolean)
                         }))}
                         value={selectedProjectId.toString()}
                         onValueChange={(value) => {
@@ -405,18 +423,64 @@ export function CreateItemModal({
                     <FormLabel>Assignee</FormLabel>
                     <FormControl>
                       <Combobox
-                        options={[
-                          { value: "unassigned", label: "Unassigned" },
-                          ...projectTeamMembers.map(user => ({
-                            value: user.id.toString(),
-                            label: `${user.fullName ? `${user.fullName} (${user.username})` : user.username}${user.role && ['ADMIN', 'SCRUM_MASTER'].includes(user.role) ? ` - ${user.role}` : ''}`
-                          }))
-                        ]}
+                        options={(() => {
+                          const assigneeOptions = [
+                            { value: "unassigned", label: "Unassigned" },
+                            ...projectTeamMembers.map(user => {
+                              const option = {
+                                value: user.id.toString(),
+                                label: (() => {
+                                  const name = user.fullName || user.username;
+                                  const username = user.fullName ? `@${user.username}` : '';
+                                  let roleDisplay = '';
+                                  
+                                  if (user.role === 'ADMIN') {
+                                    roleDisplay = ' 👑 Admin';
+                                  } else if (user.role === 'SCRUM_MASTER') {
+                                    roleDisplay = ' 🏅 Scrum Master';
+                                  }
+                                  
+                                  return `${name}${username}${roleDisplay}`;
+                                })(),
+                                searchFields: [
+                                  user.fullName || '',
+                                  user.username || '',
+                                  user.email || '',
+                                  user.role || ''
+                                ].filter(Boolean)
+                              };
+                              
+                              // Debug logging for the first user to see data structure
+                              if (user.id === projectTeamMembers[0]?.id) {
+                                console.log('🔍 First user option created:', {
+                                  rawUser: user,
+                                  option: option
+                                });
+                              }
+                              
+                              return option;
+                            })
+                          ];
+                          
+                          if (teamMembersError) {
+                            console.error('❌ Team members error:', teamMembersError);
+                          }
+                          
+                          if (assigneeOptions.length === 1) {
+                            console.warn('⚠️ No team members found for project:', selectedProjectId, {
+                              loading: teamMembersLoading,
+                              error: teamMembersError,
+                              members: projectTeamMembers
+                            });
+                          }
+                          
+                          return assigneeOptions;
+                        })()}
                         value={field.value?.toString() || "unassigned"}
                         onValueChange={(value) => field.onChange(value && value !== "unassigned" ? parseInt(value) : null)}
-                        placeholder="Search and select assignee..."
+                        placeholder={teamMembersLoading ? "Loading team members..." : "Search and select assignee..."}
                         searchPlaceholder="Search team members..."
-                        emptyText="No team members found."
+                        emptyText={teamMembersError ? "Error loading team members" : "No team members found."}
                       />
                     </FormControl>
                     <FormMessage />
