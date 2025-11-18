@@ -134,10 +134,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         
-        // Only the creator can delete (or admin/scrum master for backward compatibility)
-        if ($report['created_by'] != $userId) {
+        // Check user role to determine access
+        $stmt = $conn->prepare("SELECT user_role FROM users WHERE id = ?");
+        $stmt->execute([$userId]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        $isAdminOrScrum = $user && ($user['user_role'] === 'ADMIN' || $user['user_role'] === 'SCRUM_MASTER');
+        
+        // Allow creator or admin/scrum master to delete
+        if ($report['created_by'] != $userId && !$isAdminOrScrum) {
             http_response_code(403);
-            echo json_encode(['error' => 'You can only delete your own bug reports']);
+            echo json_encode(['error' => 'You can only delete your own bug reports unless you are an admin or scrum master']);
             exit;
         }
         
@@ -179,10 +186,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         
-        // Only the creator can edit (or admin/scrum master for backward compatibility)
-        if ($report['created_by'] != $userId) {
+        // Check user role to determine access
+        $userStmt = $conn->prepare("SELECT user_role FROM users WHERE id = ?");
+        $userStmt->execute([$userId]);
+        $user = $userStmt->fetch(PDO::FETCH_ASSOC);
+        
+        $isAdminOrScrum = $user && ($user['user_role'] === 'ADMIN' || $user['user_role'] === 'SCRUM_MASTER');
+        
+        // Allow creator or admin/scrum master to edit
+        if ($report['created_by'] != $userId && !$isAdminOrScrum) {
             http_response_code(403);
-            echo json_encode(['error' => 'You can only edit your own bug reports']);
+            echo json_encode(['error' => 'You can only edit your own bug reports unless you are an admin or scrum master']);
             exit;
         }
     } catch (Exception $e) {

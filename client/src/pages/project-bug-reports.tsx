@@ -89,6 +89,11 @@ export default function ProjectBugReports() {
 
   // Everyone can see all bug reports
   const isAdminOrScrum = currentUser && (currentUser.role === 'ADMIN' || currentUser.role === 'SCRUM_MASTER');
+  console.log('Bug Reports Debug:', {
+    currentUser,
+    isAdminOrScrum,
+    userRole: currentUser?.role
+  });
   const filteredReports = allBugReports; // Show all reports to everyone
     
   // Apply status filter
@@ -473,7 +478,17 @@ export default function ProjectBugReports() {
                             </td>
                             <td className="p-3">
                               {/* Show actions for the creator of the bug report OR admin/scrum master */}
-                              {currentUser && (r.created_by === currentUser.id || isAdminOrScrum) ? (
+                              {(() => {
+                                const canEdit = currentUser && (r.created_by === currentUser.id || isAdminOrScrum);
+                                console.log(`Bug report ${r.id} - canEdit:`, {
+                                  canEdit,
+                                  createdBy: r.created_by,
+                                  currentUserId: currentUser?.id,
+                                  isAdminOrScrum,
+                                  userRole: currentUser?.role
+                                });
+                                return canEdit;
+                              })() ? (
                                 editingId === r.id ? (
                                   <div className="flex gap-1">
                                     <Button 

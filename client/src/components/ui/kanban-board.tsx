@@ -8,6 +8,21 @@ import { apiRequest } from "@/lib/queryClient";
 import { CheckIcon, Clock, Flag, ListChecks, Bug, Lightbulb, Layers } from "lucide-react";
 import { User, WorkItem } from "@shared/schema";
 
+// Helper function to check if a user can edit a work item - only assignees can edit
+function canUserEditWorkItem(
+  item: any, 
+  currentUser: any, 
+  allWorkItems: any[]
+): boolean {
+  // Admin and Scrum Master can always edit
+  if (currentUser?.role === 'ADMIN' || currentUser?.role === 'SCRUM_MASTER') {
+    return true;
+  }
+  
+  // Only the assigned user can edit the work item
+  return (item.assigneeId === currentUser?.id);
+}
+
 interface KanbanColumn {
   id: string;
   title: string;
@@ -125,6 +140,16 @@ export function KanbanBoard({
     const itemToMove = workItems.find(item => item.id === itemId);
     
     if (!itemToMove) return;
+    
+    // Check if user has permission to move this item
+    if (!canUserEditWorkItem(itemToMove, currentUser, workItems)) {
+      toast({
+        title: "Permission Denied",
+        description: "You don't have permission to move this item. You must be assigned to this item or its parent items.",
+        variant: "destructive",
+      });
+      return;
+    }
     
     // Determine the new status based on the destination column
     const newStatus = destination.droppableId;
@@ -262,10 +287,7 @@ export function KanbanBoard({
                             {...provided.draggableProps}
                             {...provided.dragHandleProps}
                             className={`bg-white cursor-move hover:shadow-md transition-all ${
-                              currentUser?.role === 'ADMIN' || 
-                              currentUser?.role === 'SCRUM_MASTER' || 
-                              item.reporterId === currentUser?.id ||
-                              item.assigneeId === currentUser?.id
+                              canUserEditWorkItem(item, currentUser, workItems)
                                 ? 'hover:ring-2 hover:ring-blue-300'
                                 : 'opacity-75'
                             }`}
@@ -273,22 +295,16 @@ export function KanbanBoard({
                               e.preventDefault();
                               e.stopPropagation();
                               // Only trigger edit if user has permission
-                              if (currentUser?.role === 'ADMIN' || 
-                                  currentUser?.role === 'SCRUM_MASTER' || 
-                                  item.reporterId === currentUser?.id ||
-                                  item.assigneeId === currentUser?.id) {
+                              if (canUserEditWorkItem(item, currentUser, workItems)) {
                                 if (onItemEdit) {
                                   onItemEdit(item);
                                 }
                               }
                             }}
                             title={
-                              currentUser?.role === 'ADMIN' || 
-                              currentUser?.role === 'SCRUM_MASTER' || 
-                              item.reporterId === currentUser?.id ||
-                              item.assigneeId === currentUser?.id
+                              canUserEditWorkItem(item, currentUser, workItems)
                                 ? 'Click to edit'
-                                : `Created by: ${users?.find(u => u.id === item.reporterId)?.fullName || "Unknown"} - View only`
+                                : `Created by: ${users?.find(u => u.id === item.reporterId)?.email || users?.find(u => u.id === item.reporterId)?.fullName || "Unknown"} - View only`
                             }
                           >
                             <CardContent className="p-4">

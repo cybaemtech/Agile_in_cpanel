@@ -38,6 +38,21 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { queryClient } from "@/lib/queryClient";
 
+// Helper function to check if a user can edit a work item - only assignees can edit
+function canUserEditWorkItem(
+  item: any, 
+  currentUser: any, 
+  allWorkItems: any[]
+): boolean {
+  // Admin and Scrum Master can always edit
+  if (currentUser?.role === 'ADMIN' || currentUser?.role === 'SCRUM_MASTER') {
+    return true;
+  }
+  
+  // Only the assigned user can edit the work item
+  return (item.assigneeId === currentUser?.id);
+}
+
 export default function ProjectDetails() {
   const [_, params] = useRoute('/projects/:id');
   const [_path, navigate] = useLocation();
@@ -76,6 +91,9 @@ export default function ProjectDetails() {
   const [showKeyResetDialog, setShowKeyResetDialog] = useState(false);
   const [newProjectKey, setNewProjectKey] = useState("");
   const [isResettingKey, setIsResettingKey] = useState(false);
+  const [assignTeamId, setAssignTeamId] = useState<string>("");
+  const [isAssigningTeam, setIsAssigningTeam] = useState(false);
+  const [showAssignTeamDialog, setShowAssignTeamDialog] = useState(false);
   
   const { 
     modalType, 
@@ -323,9 +341,9 @@ export default function ProjectDetails() {
     }
   };
 
-  // Add team member handler
+  // Add team member handler - Enhanced to sync with project team
   const handleAddTeamMember = async () => {
-    if (!selectedUserId || !project?.teamId) {
+    if (!selectedUserId) {
       toast({
         title: "Error",
         description: "Please select a user to add",
@@ -335,27 +353,37 @@ export default function ProjectDetails() {
     }
 
     try {
-      const response = await apiRequest(
-        'POST',
-        `/teams/${project.teamId}/members`,
-        {
-          userId: parseInt(selectedUserId),
-          role: 'MEMBER'
-        }
-      );
+      // If project has a team, add to that team
+      if (project?.teamId) {
+        const response = await apiRequest(
+          'POST',
+          `/teams/${project.teamId}/members`,
+          {
+            userId: parseInt(selectedUserId),
+            role: 'MEMBER'
+          }
+        );
 
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: "Team member added successfully",
-        });
-        setSelectedUserId("");
-        refetchTeamMembers();
+        if (response.ok) {
+          toast({
+            title: "Success",
+            description: "Team member added successfully to both project and team",
+          });
+          setSelectedUserId("");
+          refetchTeamMembers();
+        } else {
+          const errorData = await response.json();
+          toast({
+            title: "Error",
+            description: errorData.message || "Failed to add team member",
+            variant: "destructive",
+          });
+        }
       } else {
-        const errorData = await response.json();
+        // Project has no team assigned, just add as project member
         toast({
-          title: "Error",
-          description: errorData.message || "Failed to add team member",
+          title: "Info",
+          description: "This project has no team assigned. Please assign a team first or the member will only be added as a project collaborator.",
           variant: "destructive",
         });
       }
@@ -366,6 +394,60 @@ export default function ProjectDetails() {
         description: "An unexpected error occurred",
         variant: "destructive",
       });
+    }
+  };
+
+  // Assign team to project handler
+  const handleAssignTeam = async () => {
+    if (!assignTeamId) {
+      toast({
+        title: "Error",
+        description: "Please select a team to assign",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsAssigningTeam(true);
+    
+    try {
+      const response = await apiRequest(
+        'PATCH',
+        `/projects/${projectId}`,
+        {
+          teamId: parseInt(assignTeamId)
+        }
+      );
+
+      if (response.ok) {
+        toast({
+          title: "Team Assigned",
+          description: "Team has been successfully assigned to this project",
+        });
+        setShowAssignTeamDialog(false);
+        setAssignTeamId("");
+        
+        // Invalidate cache to refresh project data
+        await queryClient.invalidateQueries({ queryKey: [`/projects/${projectId}`] });
+        await queryClient.invalidateQueries({ queryKey: ['/projects'] });
+        refetchTeamMembers();
+      } else {
+        const errorData = await response.json();
+        toast({
+          title: "Error",
+          description: errorData.message || "Failed to assign team",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error assigning team:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred while assigning team",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAssigningTeam(false);
     }
   };
 
@@ -964,28 +1046,33 @@ export default function ProjectDetails() {
                                       {!item.hasChildren && <div className="w-5" />}
                                       <span 
                                         className={`truncate ${
-                                          currentUser?.role === 'ADMIN' || 
-                                          currentUser?.role === 'SCRUM_MASTER' || 
-                                          item.reporterId === currentUser?.id ||
-                                          item.assigneeId === currentUser?.id
+                                          canUserEditWorkItem(item, currentUser, workItems || [])
                                             ? 'cursor-pointer hover:text-primary' 
                                             : 'cursor-default text-neutral-600'
                                         }`}
                                         onClick={() => {
-                                          if (currentUser?.role === 'ADMIN' || 
-                                              currentUser?.role === 'SCRUM_MASTER' || 
-                                              item.reporterId === currentUser?.id ||
-                                              item.assigneeId === currentUser?.id) {
+                                          if (canUserEditWorkItem(item, currentUser, workItems || [])) {
                                             openModal("editItem", { workItem: item });
                                           }
                                         }}
                                         title={
-                                          currentUser?.role === 'ADMIN' || 
-                                          currentUser?.role === 'SCRUM_MASTER' || 
-                                          item.reporterId === currentUser?.id ||
-                                          item.assigneeId === currentUser?.id
+                                          canUserEditWorkItem(item, currentUser, workItems || [])
                                             ? 'Click to edit'
-                                            : `Created by: ${projectTeamMembers.find(u => u.id === item.reporterId)?.fullName || item.createdByName || "Unknown"}${item.createdAt ? ` on ${(() => { const date = new Date(item.createdAt); const istDate = new Date(date.getTime() + (5.5 * 60 * 60 * 1000)); return istDate.toLocaleString('en-IN', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).replace(/,\s*/, ', '); })()}` : ''}`
+                                            : `Created by: ${(() => {
+                                                const reporter = projectTeamMembers.find(u => u.id === item.reporterId) || 
+                                                                allUsers?.find(u => u.id === item.reporterId);
+                                                const email = item.createdByEmail || "";
+                                                const name = item.createdByName || "";
+                                                const reporterEmail = reporter?.email || "";
+                                                const reporterName = reporter?.fullName || reporter?.username || "";
+                                                
+                                                // Prefer reporter info, then item creator info, with proper fallbacks
+                                                if (reporterEmail && reporterEmail !== "unknown@example.com") return reporterEmail;
+                                                if (reporterName && reporterName !== "Unknown User") return reporterName;
+                                                if (email && email !== "unknown@example.com") return email;
+                                                if (name && name !== "Unknown User") return name;
+                                                return "Unknown User";
+                                              })()} ${item.createdAt ? `on ${(() => { const date = new Date(item.createdAt); const istDate = new Date(date.getTime() + (5.5 * 60 * 60 * 1000)); return istDate.toLocaleString('en-IN', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).replace(/,\s*/, ', '); })()}` : ''}`
                                         }
                                       >
                                         {item.title}
@@ -1037,7 +1124,10 @@ export default function ProjectDetails() {
                         <div>
                           <h4 className="text-sm font-medium mb-1">Created by</h4>
                           <p className="text-sm">
-                            {currentUser?.fullName || 'Unknown'}
+                            {(() => {
+                              const creator = allUsers?.find(user => user.id === project?.createdBy);
+                              return creator?.email || creator?.fullName || creator?.username || 'Unknown';
+                            })()}
                           </p>
                         </div>
                         <div>
@@ -1404,20 +1494,28 @@ export default function ProjectDetails() {
                                     : 'cursor-default'
                                 }`}
                                 onClick={() => {
-                                  if (currentUser?.role === 'ADMIN' || 
-                                      currentUser?.role === 'SCRUM_MASTER' || 
-                                      item.reporterId === currentUser?.id ||
-                                      item.assigneeId === currentUser?.id) {
+                                  if (canUserEditWorkItem(item, currentUser, workItems || [])) {
                                     openModal("editItem", { workItem: item });
                                   }
                                 }}
                                 title={
-                                  currentUser?.role === 'ADMIN' || 
-                                  currentUser?.role === 'SCRUM_MASTER' || 
-                                  item.reporterId === currentUser?.id ||
-                                  item.assigneeId === currentUser?.id
+                                  canUserEditWorkItem(item, currentUser, workItems || [])
                                     ? 'Click to edit'
-                                    : `Created by: ${projectTeamMembers.find(u => u.id === item.reporterId)?.fullName || item.createdByName || "Unknown"}${item.createdAt ? ` on ${(() => { const date = new Date(item.createdAt); const istDate = new Date(date.getTime() + (5.5 * 60 * 60 * 1000)); return istDate.toLocaleString('en-IN', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).replace(/,\s*/, ', '); })()}` : ''} - View only`
+                                    : `Created by: ${(() => {
+                                        const reporter = projectTeamMembers.find(u => u.id === item.reporterId) || 
+                                                        allUsers?.find(u => u.id === item.reporterId);
+                                        const email = item.createdByEmail || "";
+                                        const name = item.createdByName || "";
+                                        const reporterEmail = reporter?.email || "";
+                                        const reporterName = reporter?.fullName || reporter?.username || "";
+                                        
+                                        // Prefer reporter info, then item creator info, with proper fallbacks
+                                        if (reporterEmail && reporterEmail !== "unknown@example.com") return reporterEmail;
+                                        if (reporterName && reporterName !== "Unknown User") return reporterName;
+                                        if (email && email !== "unknown@example.com") return email;
+                                        if (name && name !== "Unknown User") return name;
+                                        return "Unknown User";
+                                      })()} ${item.createdAt ? `on ${(() => { const date = new Date(item.createdAt); const istDate = new Date(date.getTime() + (5.5 * 60 * 60 * 1000)); return istDate.toLocaleString('en-IN', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).replace(/,\s*/, ', '); })()}` : ''} - View only`
                                 }
                               >
                                 {item.title}
@@ -1472,14 +1570,27 @@ export default function ProjectDetails() {
                               )}
                             </td>
                             <td className="px-2 py-1.5 border-r border-neutral-200">
-                              {(item.reporterId || item.createdByName || item.createdAt) ? (
+                              {(item.reporterId || item.createdByEmail || item.createdByName || item.createdAt) ? (
                                 <div className="flex flex-col">
                                   <div className="flex items-center">
                                     <div className="h-4 w-4 rounded-full bg-blue-200 flex items-center justify-center text-xs mr-1">
-                                      {(projectTeamMembers.find(u => u.id === item.reporterId)?.fullName || item.createdByName || "Unknown").substring(0, 1)}
+                                      {(() => {
+                                        const email = item.createdByEmail || "";
+                                        const name = item.createdByName || "";
+                                        const displayText = email !== "unknown@example.com" ? email : (name !== "Unknown User" ? name : "U");
+                                        return displayText.substring(0, 1).toUpperCase();
+                                      })()}
                                     </div>
-                                    <span className="text-xs truncate max-w-[100px]">
-                                      {projectTeamMembers.find(u => u.id === item.reporterId)?.fullName || item.createdByName || "Unknown"}
+                                    <span className="text-xs truncate max-w-[100px]" title={(() => {
+                                      const email = item.createdByEmail || "";
+                                      const name = item.createdByName || "";
+                                      return email !== "unknown@example.com" ? email : (name !== "Unknown User" ? name : "Unknown User");
+                                    })()}>
+                                      {(() => {
+                                        const email = item.createdByEmail || "";
+                                        const name = item.createdByName || "";
+                                        return email !== "unknown@example.com" ? email : (name !== "Unknown User" ? name : "Unknown User");
+                                      })()}
                                     </span>
                                   </div>
                                   {item.createdAt && (
@@ -1542,10 +1653,7 @@ export default function ProjectDetails() {
                             <td className="px-2 py-1.5">
                               <div className="flex space-x-1">
                                 {/* Check if user can edit this item */}
-                                {(currentUser?.role === 'ADMIN' || 
-                                  currentUser?.role === 'SCRUM_MASTER' || 
-                                  item.reporterId === currentUser?.id ||
-                                  item.assigneeId === currentUser?.id) ? (
+                                {canUserEditWorkItem(item, currentUser, workItems || []) ? (
                                   <>
                                     <Button 
                                       size="sm" 
@@ -1705,88 +1813,139 @@ export default function ProjectDetails() {
                       </div>
                     </div>
                     
+                    {/* Team Assignment Section */}
+                    <div>
+                      <h4 className="text-md font-medium mb-4">Team Assignment</h4>
+                      <div className="border rounded-md p-4 max-w-3xl">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">
+                              Current Team: {project?.teamId ? 
+                                teams?.find(team => team.id === project.teamId)?.name || 'Unknown Team' : 
+                                'No team assigned'}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {project?.teamId ? 
+                                'Team members can be assigned to work items and access project resources.' : 
+                                'Assign a team to enable team member management and collaboration.'}
+                            </p>
+                          </div>
+                          {isAdminOrScrum && (
+                            <Button
+                              variant="outline"
+                              onClick={() => setShowAssignTeamDialog(true)}
+                              className="text-blue-600 hover:text-blue-700 border-blue-300 hover:border-blue-400"
+                            >
+                              <Users className="h-4 w-4 mr-1" />
+                              {project?.teamId ? 'Change Team' : 'Assign Team'}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
                     {/* Team Section */}
                     <div>
                       <h4 className="text-md font-medium mb-4">Team Management</h4>
-                      <div className="border rounded-md overflow-hidden max-w-3xl">
-                        {/* Current Team Members */}
-                        <div className="bg-neutral-50 px-4 py-3 border-b">
-                          <h5 className="text-sm font-medium">Current Team Members ({projectTeamMembers?.length || 0})</h5>
-                        </div>
-                        <div className="p-4">
-                          {projectTeamMembers && projectTeamMembers.length > 0 ? (
-                            <div className="space-y-2">
-                              {projectTeamMembers.map(member => (
-                                <div key={member.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
-                                  <div className="flex items-center space-x-3">
-                                    <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-medium">
-                                      {member.fullName?.substring(0, 1) || member.username?.substring(0, 1) || "?"}
+                      {project?.teamId ? (
+                        <div className="border rounded-md overflow-hidden max-w-3xl">
+                          {/* Current Team Members */}
+                          <div className="bg-neutral-50 px-4 py-3 border-b">
+                            <h5 className="text-sm font-medium">Current Team Members ({projectTeamMembers?.length || 0})</h5>
+                          </div>
+                          <div className="p-4">
+                            {projectTeamMembers && projectTeamMembers.length > 0 ? (
+                              <div className="space-y-2">
+                                {projectTeamMembers.map(member => (
+                                  <div key={member.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                                    <div className="flex items-center space-x-3">
+                                      <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-medium">
+                                        {member.fullName?.substring(0, 1) || member.username?.substring(0, 1) || "?"}
+                                      </div>
+                                      <div>
+                                        <p className="text-sm font-medium text-gray-900">{member.fullName || member.username}</p>
+                                        <p className="text-xs text-gray-500 capitalize">{member.role?.toLowerCase().replace('_', ' ')}</p>
+                                      </div>
                                     </div>
-                                    <div>
-                                      <p className="text-sm font-medium text-gray-900">{member.fullName || member.username}</p>
-                                      <p className="text-xs text-gray-500 capitalize">{member.role?.toLowerCase().replace('_', ' ')}</p>
-                                    </div>
+                                    {isAdminOrScrum && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleRemoveTeamMember(member.id)}
+                                        disabled={removingMemberId === member.id}
+                                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                      >
+                                        {removingMemberId === member.id ? (
+                                          <div className="animate-spin h-3 w-3 border border-current border-t-transparent rounded-full" />
+                                        ) : (
+                                          <UserMinus className="h-3 w-3" />
+                                        )}
+                                      </Button>
+                                    )}
                                   </div>
-                                  {isAdminOrScrum && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => handleRemoveTeamMember(member.id)}
-                                      disabled={removingMemberId === member.id}
-                                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                    >
-                                      {removingMemberId === member.id ? (
-                                        <div className="animate-spin h-3 w-3 border border-current border-t-transparent rounded-full" />
-                                      ) : (
-                                        <UserMinus className="h-3 w-3" />
-                                      )}
-                                    </Button>
-                                  )}
-                                </div>
-                              ))}
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-sm text-neutral-500 text-center py-4">
+                                No team members assigned to this project yet.
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Add Team Member */}
+                          {isAdminOrScrum && (
+                            <div className="border-t bg-neutral-50 px-4 py-3">
+                              <div className="flex items-center space-x-3">
+                                <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                                  <SelectTrigger className="flex-1">
+                                    <SelectValue placeholder="Select a user to add..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {allUsers
+                                      ?.filter(user => !projectTeamMembers?.some(member => member.id === user.id))
+                                      ?.map(user => (
+                                        <SelectItem key={user.id} value={user.id.toString()}>
+                                          <div className="flex items-center space-x-2">
+                                            <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs">
+                                              {user.fullName?.substring(0, 1) || user.username?.substring(0, 1) || "?"}
+                                            </div>
+                                            <span>{user.fullName || user.username}</span>
+                                          </div>
+                                        </SelectItem>
+                                      )) || []}
+                                  </SelectContent>
+                                </Select>
+                                <Button
+                                  size="sm"
+                                  onClick={handleAddTeamMember}
+                                  disabled={!selectedUserId}
+                                >
+                                  <UserPlus className="h-4 w-4 mr-1" />
+                                  Add
+                                </Button>
+                              </div>
                             </div>
-                          ) : (
-                            <p className="text-sm text-neutral-500 text-center py-4">
-                              No team members assigned to this project yet.
-                            </p>
                           )}
                         </div>
-
-                        {/* Add Team Member */}
-                        {isAdminOrScrum && (
-                          <div className="border-t bg-neutral-50 px-4 py-3">
-                            <div className="flex items-center space-x-3">
-                              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                                <SelectTrigger className="flex-1">
-                                  <SelectValue placeholder="Select a user to add..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {allUsers
-                                    ?.filter(user => !projectTeamMembers?.some(member => member.id === user.id))
-                                    ?.map(user => (
-                                      <SelectItem key={user.id} value={user.id.toString()}>
-                                        <div className="flex items-center space-x-2">
-                                          <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs">
-                                            {user.fullName?.substring(0, 1) || user.username?.substring(0, 1) || "?"}
-                                          </div>
-                                          <span>{user.fullName || user.username}</span>
-                                        </div>
-                                      </SelectItem>
-                                    )) || []}
-                                </SelectContent>
-                              </Select>
-                              <Button
-                                size="sm"
-                                onClick={handleAddTeamMember}
-                                disabled={!selectedUserId}
-                              >
-                                <UserPlus className="h-4 w-4 mr-1" />
-                                Add
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      ) : (
+                        <div className="border rounded-md p-6 max-w-3xl text-center">
+                          <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                          <h5 className="text-lg font-medium text-gray-900 mb-2">No Team Assigned</h5>
+                          <p className="text-sm text-gray-500 mb-4">
+                            This project doesn't have a team assigned yet. Assign a team to enable member management and collaboration features.
+                          </p>
+                          {isAdminOrScrum && (
+                            <Button
+                              variant="outline"
+                              onClick={() => setShowAssignTeamDialog(true)}
+                              className="text-blue-600 hover:text-blue-700 border-blue-300 hover:border-blue-400"
+                            >
+                              <Users className="h-4 w-4 mr-1" />
+                              Assign Team
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </div>
                     
                     {/* Danger Zone */}
@@ -1913,6 +2072,74 @@ export default function ProjectDetails() {
               disabled={isResettingKey || !newProjectKey.trim()}
             >
               {isResettingKey ? "Resetting..." : "Reset Project Key"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Team Assignment Dialog (Admin/Scrum Master Only) */}
+      <Dialog open={showAssignTeamDialog} onOpenChange={setShowAssignTeamDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center">
+              <Users className="h-5 w-5 mr-2" />
+              {project?.teamId ? 'Change Project Team' : 'Assign Team to Project'}
+            </DialogTitle>
+            <DialogDescription>
+              {project?.teamId 
+                ? 'Select a different team to assign to this project. This will change which team members have access to the project.'
+                : 'Select a team to assign to this project. Team members will be able to access the project and be assigned to work items.'
+              }
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Current Team: <span className="font-semibold">{project?.teamId ? 
+                  teams?.find(team => team.id === project.teamId)?.name || 'Unknown Team' : 
+                  'No team assigned'}</span>
+              </label>
+            </div>
+            <div>
+              <label htmlFor="assignTeamId" className="block text-sm font-medium mb-2">
+                Select Team
+              </label>
+              <Select value={assignTeamId} onValueChange={setAssignTeamId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a team..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No team (remove team assignment)</SelectItem>
+                  {teams?.filter(team => team.id !== project?.teamId).map(team => (
+                    <SelectItem key={team.id} value={team.id.toString()}>
+                      <div className="flex items-center space-x-2">
+                        <Users className="h-4 w-4" />
+                        <span>{team.name}</span>
+                      </div>
+                    </SelectItem>
+                  )) || []}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowAssignTeamDialog(false);
+                setAssignTeamId("");
+              }}
+              disabled={isAssigningTeam}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAssignTeam}
+              disabled={isAssigningTeam || !assignTeamId}
+            >
+              {isAssigningTeam ? "Assigning..." : (project?.teamId ? "Change Team" : "Assign Team")}
             </Button>
           </DialogFooter>
         </DialogContent>

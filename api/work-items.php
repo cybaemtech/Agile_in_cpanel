@@ -63,12 +63,54 @@ switch ($method . ':' . $path) {
 
 function getAllWorkItems($conn) {
     try {
-        // Check if updated_by column exists
-        $checkColumn = $conn->query("SHOW COLUMNS FROM work_items LIKE 'updated_by'");
-        $hasUpdatedBy = $checkColumn->rowCount() > 0;
+        // Check for either last_updated_by or updated_by column
+        $checkLastUpdatedBy = $conn->query("SHOW COLUMNS FROM work_items LIKE 'last_updated_by'");
+        $hasLastUpdatedBy = $checkLastUpdatedBy->rowCount() > 0;
         
-        if ($hasUpdatedBy) {
-            // Use updated_by column if it exists
+        $checkUpdatedBy = $conn->query("SHOW COLUMNS FROM work_items LIKE 'updated_by'");
+        $hasUpdatedBy = $checkUpdatedBy->rowCount() > 0;
+        
+        if ($hasLastUpdatedBy) {
+            // Use last_updated_by column if it exists (preferred)
+            $stmt = $conn->prepare("
+                SELECT 
+                    wi.id,
+                    wi.external_id as externalId,
+                    wi.title,
+                    wi.description,
+                    wi.tags,
+                    wi.type,
+                    wi.status,
+                    wi.priority,
+                    wi.project_id as projectId,
+                    wi.parent_id as parentId,
+                    wi.assignee_id as assigneeId,
+                    wi.reporter_id as reporterId,
+                    wi.last_updated_by as updatedBy,
+                    wi.estimate,
+                    wi.start_date as startDate,
+                    wi.end_date as endDate,
+                    wi.completed_at as completedAt,
+                    wi.created_at as createdAt,
+                    wi.updated_at as updatedAt,
+                    p.name as projectName,
+                    p.`key` as projectKey,
+                    assignee.full_name as assigneeName,
+                    reporter.full_name as reporterName,
+                    creator.full_name as createdByName,
+                    creator.email as createdByEmail,
+                    creator.username as createdByUsername,
+                    updater.full_name as updatedByName
+                FROM work_items wi
+                LEFT JOIN projects p ON wi.project_id = p.id
+                LEFT JOIN users assignee ON wi.assignee_id = assignee.id
+                LEFT JOIN users reporter ON wi.reporter_id = reporter.id
+                LEFT JOIN users creator ON wi.reporter_id = creator.id
+                LEFT JOIN users updater ON wi.last_updated_by = updater.id
+                ORDER BY wi.updated_at DESC
+            ");
+        } elseif ($hasUpdatedBy) {
+            // Use updated_by column if it exists (fallback)
             $stmt = $conn->prepare("
                 SELECT 
                     wi.id,
@@ -95,6 +137,8 @@ function getAllWorkItems($conn) {
                     assignee.full_name as assigneeName,
                     reporter.full_name as reporterName,
                     creator.full_name as createdByName,
+                    creator.email as createdByEmail,
+                    creator.username as createdByUsername,
                     updater.full_name as updatedByName
                 FROM work_items wi
                 LEFT JOIN projects p ON wi.project_id = p.id
@@ -105,7 +149,7 @@ function getAllWorkItems($conn) {
                 ORDER BY wi.updated_at DESC
             ");
         } else {
-            // Fallback to using reporter_id as updater if updated_by doesn't exist
+            // Fallback to using reporter_id as updater if neither field exists
             $stmt = $conn->prepare("
                 SELECT 
                     wi.id,
@@ -131,13 +175,14 @@ function getAllWorkItems($conn) {
                     p.`key` as projectKey,
                     assignee.full_name as assigneeName,
                     reporter.full_name as reporterName,
-                    creator.full_name as createdByName,
+                    reporter.full_name as createdByName,
+                    reporter.email as createdByEmail,
+                    reporter.username as createdByUsername,
                     reporter.full_name as updatedByName
                 FROM work_items wi
                 LEFT JOIN projects p ON wi.project_id = p.id
                 LEFT JOIN users assignee ON wi.assignee_id = assignee.id
                 LEFT JOIN users reporter ON wi.reporter_id = reporter.id
-                LEFT JOIN users creator ON wi.reporter_id = creator.id
                 ORDER BY wi.updated_at DESC
             ");
         }
@@ -171,8 +216,10 @@ function getAllWorkItems($conn) {
                 'projectKey' => $item['projectKey'],
                 'assigneeName' => $item['assigneeName'],
                 'reporterName' => $item['reporterName'],
-                'createdByName' => $item['createdByName'],
-                'updatedByName' => $item['updatedByName']
+                'createdByName' => $item['createdByName'] ?? $item['reporterName'] ?? 'Unknown User',
+                'createdByEmail' => $item['createdByEmail'] ?? 'unknown@example.com',
+                'createdByUsername' => $item['createdByUsername'] ?? 'unknown',
+                'updatedByName' => $item['updatedByName'] ?? $item['reporterName'] ?? 'Unknown User'
             ];
         }, $workItems);
         
@@ -186,32 +233,110 @@ function getAllWorkItems($conn) {
 
 function getWorkItem($conn, $workItemId) {
     try {
-        $stmt = $conn->prepare("
-            SELECT 
-                wi.id,
-                wi.external_id as externalId,
-                wi.title,
-                wi.description,
-                wi.tags,
-                wi.type,
-                wi.status,
-                wi.priority,
-                wi.project_id as projectId,
-                wi.parent_id as parentId,
-                wi.assignee_id as assigneeId,
-                wi.reporter_id as reporterId,
-                wi.updated_by as updatedBy,
-                wi.estimate,
-                wi.start_date as startDate,
-                wi.end_date as endDate,
-                wi.completed_at as completedAt,
-                wi.created_at as createdAt,
-                wi.updated_at as updatedAt,
-                updater.full_name as updatedByName
-            FROM work_items wi
-            LEFT JOIN users updater ON wi.updated_by = updater.id
-            WHERE wi.id = ?
-        ");
+        // Check for either last_updated_by or updated_by column
+        $checkLastUpdatedBy = $conn->query("SHOW COLUMNS FROM work_items LIKE 'last_updated_by'");
+        $hasLastUpdatedBy = $checkLastUpdatedBy->rowCount() > 0;
+        
+        $checkUpdatedBy = $conn->query("SHOW COLUMNS FROM work_items LIKE 'updated_by'");
+        $hasUpdatedBy = $checkUpdatedBy->rowCount() > 0;
+        
+        if ($hasLastUpdatedBy) {
+            // Use last_updated_by column if it exists (preferred)
+            $stmt = $conn->prepare("
+                SELECT 
+                    wi.id,
+                    wi.external_id as externalId,
+                    wi.title,
+                    wi.description,
+                    wi.tags,
+                    wi.type,
+                    wi.status,
+                    wi.priority,
+                    wi.project_id as projectId,
+                    wi.parent_id as parentId,
+                    wi.assignee_id as assigneeId,
+                    wi.reporter_id as reporterId,
+                    wi.last_updated_by as updatedBy,
+                    wi.estimate,
+                    wi.start_date as startDate,
+                    wi.end_date as endDate,
+                    wi.completed_at as completedAt,
+                    wi.created_at as createdAt,
+                    wi.updated_at as updatedAt,
+                    creator.full_name as createdByName,
+                    creator.email as createdByEmail,
+                    creator.username as createdByUsername,
+                    updater.full_name as updatedByName
+                FROM work_items wi
+                LEFT JOIN users creator ON wi.reporter_id = creator.id
+                LEFT JOIN users updater ON wi.last_updated_by = updater.id
+                WHERE wi.id = ?
+            ");
+        } elseif ($hasUpdatedBy) {
+            // Use updated_by column if it exists (fallback)
+            $stmt = $conn->prepare("
+                SELECT 
+                    wi.id,
+                    wi.external_id as externalId,
+                    wi.title,
+                    wi.description,
+                    wi.tags,
+                    wi.type,
+                    wi.status,
+                    wi.priority,
+                    wi.project_id as projectId,
+                    wi.parent_id as parentId,
+                    wi.assignee_id as assigneeId,
+                    wi.reporter_id as reporterId,
+                    wi.updated_by as updatedBy,
+                    wi.estimate,
+                    wi.start_date as startDate,
+                    wi.end_date as endDate,
+                    wi.completed_at as completedAt,
+                    wi.created_at as createdAt,
+                    wi.updated_at as updatedAt,
+                    creator.full_name as createdByName,
+                    creator.email as createdByEmail,
+                    creator.username as createdByUsername,
+                    updater.full_name as updatedByName
+                FROM work_items wi
+                LEFT JOIN users creator ON wi.reporter_id = creator.id
+                LEFT JOIN users updater ON wi.updated_by = updater.id
+                WHERE wi.id = ?
+            ");
+        } else {
+            // Fallback to using reporter_id as updater
+            $stmt = $conn->prepare("
+                SELECT 
+                    wi.id,
+                    wi.external_id as externalId,
+                    wi.title,
+                    wi.description,
+                    wi.tags,
+                    wi.type,
+                    wi.status,
+                    wi.priority,
+                    wi.project_id as projectId,
+                    wi.parent_id as parentId,
+                    wi.assignee_id as assigneeId,
+                    wi.reporter_id as reporterId,
+                    wi.reporter_id as updatedBy,
+                    wi.estimate,
+                    wi.start_date as startDate,
+                    wi.end_date as endDate,
+                    wi.completed_at as completedAt,
+                    wi.created_at as createdAt,
+                    wi.updated_at as updatedAt,
+                    reporter.full_name as createdByName,
+                    reporter.email as createdByEmail,
+                    reporter.username as createdByUsername,
+                    reporter.full_name as updatedByName
+                FROM work_items wi
+                LEFT JOIN users reporter ON wi.reporter_id = reporter.id
+                WHERE wi.id = ?
+            ");
+        }
+        
         $stmt->execute([$workItemId]);
         $item = $stmt->fetch();
         
@@ -241,7 +366,10 @@ function getWorkItem($conn, $workItemId) {
             'completedAt' => $item['completedAt'],
             'createdAt' => $item['createdAt'],
             'updatedAt' => $item['updatedAt'],
-            'updatedByName' => $item['updatedByName']
+            'createdByName' => $item['createdByName'] ?? 'Unknown User',
+            'createdByEmail' => $item['createdByEmail'] ?? 'unknown@example.com',
+            'createdByUsername' => $item['createdByUsername'] ?? 'unknown',
+            'updatedByName' => $item['updatedByName'] ?? 'Unknown User'
         ];
         
         echo json_encode($workItem);
@@ -280,6 +408,27 @@ function createWorkItem($conn) {
     if (empty($title) || empty($type) || $projectId <= 0) {
         http_response_code(400);
         echo json_encode(['message' => 'Invalid input data']);
+        return;
+    }
+    
+    // Check user role and restrict EPIC/FEATURE creation to ADMIN and SCRUM_MASTER only
+    $userStmt = $conn->prepare("SELECT user_role FROM users WHERE id = ?");
+    $userStmt->execute([$_SESSION['user_id']]);
+    $user = $userStmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$user) {
+        http_response_code(401);
+        echo json_encode(['message' => 'User not found']);
+        return;
+    }
+    
+    $userRole = $user['user_role'];
+    
+    // Restrict EPIC and FEATURE creation to ADMIN and SCRUM_MASTER only
+    if (($type === 'EPIC' || $type === 'FEATURE') && 
+        ($userRole !== 'ADMIN' && $userRole !== 'SCRUM_MASTER')) {
+        http_response_code(403);
+        echo json_encode(['message' => 'Only Admin and Scrum Master users can create Epic and Feature items']);
         return;
     }
     
@@ -351,12 +500,41 @@ function createWorkItem($conn) {
         $startDate = null;
         $endDate = null;
         
-        // Handle dates
-        if (isset($input['startDate']) && !empty($input['startDate'])) {
-            $startDate = date('Y-m-d H:i:s', strtotime($input['startDate']));
+        // Handle dates with improved validation
+        if (isset($input['startDate']) && !empty($input['startDate']) && $input['startDate'] !== null) {
+            error_log("Processing startDate: " . $input['startDate']);
+            try {
+                // Handle both YYYY-MM-DD and full datetime formats
+                if (strlen($input['startDate']) === 10) {
+                    // Date only format (YYYY-MM-DD) - add time
+                    $startDate = $input['startDate'] . ' 00:00:00';
+                } else {
+                    // Full datetime format
+                    $startDate = date('Y-m-d H:i:s', strtotime($input['startDate']));
+                }
+                error_log("Processed startDate: " . $startDate);
+            } catch (Exception $e) {
+                error_log("Error processing startDate: " . $e->getMessage());
+                $startDate = null;
+            }
         }
-        if (isset($input['endDate']) && !empty($input['endDate'])) {
-            $endDate = date('Y-m-d H:i:s', strtotime($input['endDate']));
+        
+        if (isset($input['endDate']) && !empty($input['endDate']) && $input['endDate'] !== null) {
+            error_log("Processing endDate: " . $input['endDate']);
+            try {
+                // Handle both YYYY-MM-DD and full datetime formats
+                if (strlen($input['endDate']) === 10) {
+                    // Date only format (YYYY-MM-DD) - add time
+                    $endDate = $input['endDate'] . ' 23:59:59';
+                } else {
+                    // Full datetime format
+                    $endDate = date('Y-m-d H:i:s', strtotime($input['endDate']));
+                }
+                error_log("Processed endDate: " . $endDate);
+            } catch (Exception $e) {
+                error_log("Error processing endDate: " . $e->getMessage());
+                $endDate = null;
+            }
         }
         
         // Insert work item with proper updated_by tracking
@@ -376,16 +554,44 @@ function createWorkItem($conn) {
         error_log("Start Date: " . $startDate);
         error_log("End Date: " . $endDate);
         
-        // Check if updated_by column exists
+        // Check for either last_updated_by or updated_by column
         try {
-            $checkColumn = $conn->query("SHOW COLUMNS FROM work_items LIKE 'updated_by'");
-            $hasUpdatedBy = $checkColumn->rowCount() > 0;
+            $checkLastUpdatedBy = $conn->query("SHOW COLUMNS FROM work_items LIKE 'last_updated_by'");
+            $hasLastUpdatedBy = $checkLastUpdatedBy->rowCount() > 0;
+            
+            $checkUpdatedBy = $conn->query("SHOW COLUMNS FROM work_items LIKE 'updated_by'");
+            $hasUpdatedBy = $checkUpdatedBy->rowCount() > 0;
         } catch (PDOException $e) {
+            $hasLastUpdatedBy = false;
             $hasUpdatedBy = false;
         }
         
-        if ($hasUpdatedBy) {
-            // Include updated_by if column exists
+        if ($hasLastUpdatedBy) {
+            // Include last_updated_by if column exists (preferred)
+            $stmt = $conn->prepare("
+                INSERT INTO work_items (
+                    external_id, title, description, tags, type, status, priority,
+                    project_id, parent_id, assignee_id, reporter_id, last_updated_by, estimate,
+                    start_date, end_date, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+            ");
+            
+            $executeParams = [
+                $externalId, $title, $description, $tags, $type, $status, $priority,
+                $projectId, $parentId, $assigneeId, $reporterId, $reporterId, $estimate,
+                $startDate, $endDate
+            ];
+            
+            error_log("Executing INSERT with parameters: " . json_encode($executeParams));
+            $success = $stmt->execute($executeParams);
+            
+            if (!$success) {
+                error_log("SQL execution failed: " . json_encode($stmt->errorInfo()));
+            } else {
+                error_log("Work item created successfully with ID: " . $conn->lastInsertId());
+            }
+        } elseif ($hasUpdatedBy) {
+            // Include updated_by if column exists (fallback)
             $stmt = $conn->prepare("
                 INSERT INTO work_items (
                     external_id, title, description, tags, type, status, priority,
@@ -394,26 +600,44 @@ function createWorkItem($conn) {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
             ");
             
-            $success = $stmt->execute([
+            $executeParams = [
                 $externalId, $title, $description, $tags, $type, $status, $priority,
                 $projectId, $parentId, $assigneeId, $reporterId, $reporterId, $estimate,
                 $startDate, $endDate
-            ]);
+            ];
+            
+            error_log("Executing INSERT with parameters: " . json_encode($executeParams));
+            $success = $stmt->execute($executeParams);
+            
+            if (!$success) {
+                error_log("SQL execution failed: " . json_encode($stmt->errorInfo()));
+            } else {
+                error_log("Work item created successfully with ID: " . $conn->lastInsertId());
+            }
         } else {
-            // Skip updated_by if column doesn't exist
+            // Skip updated tracking if neither column exists
             $stmt = $conn->prepare("
                 INSERT INTO work_items (
                     external_id, title, description, tags, type, status, priority,
                     project_id, parent_id, assignee_id, reporter_id, estimate,
                     start_date, end_date, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
             ");
             
-            $success = $stmt->execute([
+            $executeParams = [
                 $externalId, $title, $description, $tags, $type, $status, $priority,
                 $projectId, $parentId, $assigneeId, $reporterId, $estimate,
                 $startDate, $endDate
-            ]);
+            ];
+            
+            error_log("Executing INSERT with parameters: " . json_encode($executeParams));
+            $success = $stmt->execute($executeParams);
+            
+            if (!$success) {
+                error_log("SQL execution failed: " . json_encode($stmt->errorInfo()));
+            } else {
+                error_log("Work item created successfully with ID: " . $conn->lastInsertId());
+            }
         }
         
         if (!$success) {
@@ -491,10 +715,83 @@ function createWorkItem($conn) {
     }
 }
 
+// Check if user can update a work item - only assignees can edit (plus admins/scrum masters)
+function canUserUpdateWorkItem($pdo, $workItemId, $userId) {
+    try {
+        // Get user role first - admins and scrum masters can always edit
+        $stmt = $pdo->prepare("SELECT user_role FROM users WHERE id = ?");
+        $stmt->execute([$userId]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$user) {
+            return false;
+        }
+        
+        // Admin and Scrum Master can always update
+        if ($user['user_role'] === 'ADMIN' || $user['user_role'] === 'SCRUM_MASTER') {
+            return true;
+        }
+        
+        // Get the work item details
+        $stmt = $pdo->prepare("
+            SELECT id, assignee_id
+            FROM work_items 
+            WHERE id = ?
+        ");
+        $stmt->execute([$workItemId]);
+        $workItem = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$workItem) {
+            return false;
+        }
+        
+        // Only the assigned user can update the work item
+        return ($workItem['assignee_id'] == $userId);
+        
+    } catch (Exception $e) {
+        error_log("Error checking work item permissions: " . $e->getMessage());
+        return false;
+    }
+}
+
 function updateWorkItem($pdo, $id, $data) {
+    // Check authentication
+    if (!isset($_SESSION['user_id'])) {
+        http_response_code(401);
+        echo json_encode(['message' => 'Not authenticated']);
+        return false;
+    }
+    
+    $userId = $_SESSION['user_id'];
+    
+    // Check if user has permission to update this work item
+    if (!canUserUpdateWorkItem($pdo, $id, $userId)) {
+        http_response_code(403);
+        echo json_encode(['message' => 'You do not have permission to update this work item. Only the assigned user can edit this work item.']);
+        return false;
+    }
+    
+    // If user is trying to change type to EPIC or FEATURE, check role
+    if (isset($data['type'])) {
+        $newType = $data['type'];
+        if (($newType === 'EPIC' || $newType === 'FEATURE')) {
+            // Check user role
+            $stmt = $pdo->prepare("SELECT role FROM users WHERE id = ?");
+            $stmt->execute([$userId]);
+            $userRole = $stmt->fetchColumn();
+            
+            if ($userRole !== 'ADMIN' && $userRole !== 'SCRUM_MASTER') {
+                http_response_code(403);
+                echo json_encode(['message' => 'Only ADMIN and SCRUM_MASTER users can change work items to EPIC or FEATURE type']);
+                return false;
+            }
+        }
+    }
+    
     // Debug logging
     error_log("=== UPDATE WORK ITEM DEBUG ===");
     error_log("Work item ID: " . $id);
+    error_log("User ID: " . $userId);
     error_log("Raw input data: " . json_encode($data));
     
     // Map frontend camelCase fields to backend snake_case fields
@@ -514,7 +811,7 @@ function updateWorkItem($pdo, $id, $data) {
     
     error_log("Converted data: " . json_encode($convertedData));
     
-    $allowedFields = ['title', 'description', 'tags', 'status', 'priority', 'assignee_id', 'estimate', 'start_date', 'end_date', 'parent_id'];
+    $allowedFields = ['title', 'description', 'tags', 'status', 'priority', 'type', 'assignee_id', 'estimate', 'start_date', 'end_date', 'parent_id'];
     
     $updateFields = [];
     $params = [':id' => $id];
@@ -522,8 +819,35 @@ function updateWorkItem($pdo, $id, $data) {
     foreach ($allowedFields as $field) {
         if (array_key_exists($field, $convertedData)) {
             error_log("Processing field: " . $field . " = " . json_encode($convertedData[$field]));
+            
+            // Special handling for date fields
+            if ($field === 'start_date' || $field === 'end_date') {
+                $dateValue = $convertedData[$field];
+                if ($dateValue === null || $dateValue === '' || $dateValue === 'null') {
+                    $params[":$field"] = null;
+                } else {
+                    try {
+                        // Handle both YYYY-MM-DD and full datetime formats
+                        if (strlen($dateValue) === 10) {
+                            // Date only format (YYYY-MM-DD) - add appropriate time
+                            $params[":$field"] = $field === 'start_date' 
+                                ? $dateValue . ' 00:00:00' 
+                                : $dateValue . ' 23:59:59';
+                        } else {
+                            // Full datetime format
+                            $params[":$field"] = date('Y-m-d H:i:s', strtotime($dateValue));
+                        }
+                        error_log("Processed $field: " . $params[":$field"]);
+                    } catch (Exception $e) {
+                        error_log("Error processing $field: " . $e->getMessage());
+                        $params[":$field"] = null;
+                    }
+                }
+            } else {
+                $params[":$field"] = $convertedData[$field];
+            }
+            
             $updateFields[] = "$field = :$field";
-            $params[":$field"] = $convertedData[$field];
         }
     }
     
@@ -532,16 +856,24 @@ function updateWorkItem($pdo, $id, $data) {
         throw new Exception('No valid fields to update');
     }
 
-    // Check if updated_by column exists and add tracking if possible
+    // Check for either last_updated_by or updated_by column and add tracking if possible
     try {
-        $checkColumn = $pdo->query("SHOW COLUMNS FROM work_items LIKE 'updated_by'");
-        if ($checkColumn->rowCount() > 0 && isset($_SESSION['user_id'])) {
+        $checkLastUpdatedBy = $pdo->query("SHOW COLUMNS FROM work_items LIKE 'last_updated_by'");
+        $hasLastUpdatedBy = $checkLastUpdatedBy->rowCount() > 0;
+        
+        $checkUpdatedBy = $pdo->query("SHOW COLUMNS FROM work_items LIKE 'updated_by'");
+        $hasUpdatedBy = $checkUpdatedBy->rowCount() > 0;
+        
+        if ($hasLastUpdatedBy && isset($_SESSION['user_id'])) {
+            $updateFields[] = "last_updated_by = :last_updated_by";
+            $params[':last_updated_by'] = $_SESSION['user_id'];
+        } elseif ($hasUpdatedBy && isset($_SESSION['user_id'])) {
             $updateFields[] = "updated_by = :updated_by";
             $params[':updated_by'] = $_SESSION['user_id'];
         }
     } catch (PDOException $e) {
-        // Ignore if we can't check the column
-        error_log("Could not check for updated_by column: " . $e->getMessage());
+        // Ignore if we can't check the columns
+        error_log("Could not check for update tracking columns: " . $e->getMessage());
     }
     
     $sql = "UPDATE work_items SET " . implode(', ', $updateFields) . ", updated_at = NOW() WHERE id = :id";

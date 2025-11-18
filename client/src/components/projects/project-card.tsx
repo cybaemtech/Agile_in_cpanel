@@ -154,12 +154,14 @@ export function ProjectCard({
             <div className="flex items-center">
               <span className="mr-1">Created by:</span>
               <Avatar className="h-5 w-5 mr-1">
-                <AvatarImage src={creator.avatarUrl || undefined} alt={creator.fullName} />
+                <AvatarImage src={creator.avatarUrl || undefined} alt={creator.email} />
                 <AvatarFallback className="text-xs">
-                  {creator.fullName.split(' ').map(n => n[0]).join('')}
+                  {creator.email.substring(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
-              <span>{creator.fullName}</span>
+              <span className="text-sm" title={`${creator.fullName} (${creator.email})`}>
+                {creator.email}
+              </span>
             </div>
           )}
         </div>

@@ -33,7 +33,7 @@ const workItemFormSchema = z.object({
   tags: z.string().optional(),
   type: z.string(),
   status: z.string(),
-  priority: z.string().optional(),
+  priority: z.string().min(1, 'Priority is required'),
   projectId: z.number(),
   parentId: z.number().optional().nullable(),
   assigneeId: z.number().optional().nullable(),
@@ -94,15 +94,31 @@ export function CreateItemModal({
     ? ["EPIC", "FEATURE", "STORY", "TASK", "BUG"]
     : ["STORY", "TASK", "BUG"];
   
-  // Set default type based on user permissions
+  // Set default type based on user permissions - EPIC for admin/scrum, STORY for others
   const defaultType = isAdminOrScrum ? "EPIC" : "STORY";
   
   // Update selected type when user role changes or component mounts
   React.useEffect(() => {
-    if (currentUser && !allowedTypes.includes(selectedType)) {
-      setSelectedType(defaultType);
+    if (currentUser) {
+      // If current type is not allowed, set to default for their role
+      if (!allowedTypes.includes(selectedType)) {
+        setSelectedType(defaultType);
+        form.setValue("type", defaultType);
+      } else if (selectedType === "STORY" && isAdminOrScrum) {
+        // If admin/scrum is on default STORY, switch to EPIC
+        setSelectedType(defaultType);
+        form.setValue("type", defaultType);
+      }
     }
-  }, [currentUser, allowedTypes, selectedType, defaultType]);
+  }, [currentUser, allowedTypes, selectedType, defaultType, isAdminOrScrum, form]);
+  
+  // Initialize with correct type when modal opens
+  React.useEffect(() => {
+    if (isOpen && currentUser) {
+      setSelectedType(defaultType);
+      form.setValue("type", defaultType);
+    }
+  }, [isOpen, currentUser, defaultType, form]);
   
   // Only show valid parent options based on selected type and project
   const getValidParents = () => {
@@ -161,6 +177,36 @@ export function CreateItemModal({
           variant: "destructive",
         });
         return;
+      }
+      
+      // Validation: Story, Task, Bug must have assignee
+      if (['STORY', 'TASK', 'BUG'].includes(data.type) && !data.assigneeId) {
+        toast({
+          title: "Assignee Required",
+          description: `${data.type.charAt(0) + data.type.slice(1).toLowerCase()}s must have an assigned team member. Please select an assignee.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Validation: Story, Task, Bug must have description
+      if (['STORY', 'TASK', 'BUG'].includes(data.type) && (!data.description || data.description.trim() === '')) {
+        toast({
+          title: "Description Required",
+          description: `${data.type.charAt(0) + data.type.slice(1).toLowerCase()}s must have a description. Please provide details about the work to be done.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Validation: Task and Bug should have a parent Story (recommended)
+      if (['TASK', 'BUG'].includes(data.type) && !data.parentId) {
+        const confirmCreate = window.confirm(
+          `This ${data.type.toLowerCase()} is not linked to a Story. It's recommended to create ${data.type.toLowerCase()}s under a Story for better organization. Do you want to continue anyway?`
+        );
+        if (!confirmCreate) {
+          return;
+        }
       }
       
       // Prepare data for submission - ensure all required fields are present
@@ -292,15 +338,24 @@ export function CreateItemModal({
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Description</FormLabel>
+                  <FormLabel>
+                    Description
+                    {['STORY', 'TASK', 'BUG'].includes(selectedType) && <span className="text-red-500"> *</span>}
+                  </FormLabel>
                   <FormControl>
                     <Textarea 
                       {...field} 
-                      placeholder="Enter description"
+                      placeholder={`Enter ${selectedType.toLowerCase()} description - describe what needs to be done`}
                       value={field.value || ""}
                       rows={3}
+                      required={['STORY', 'TASK', 'BUG'].includes(selectedType)}
                     />
                   </FormControl>
+                  {['STORY', 'TASK', 'BUG'].includes(selectedType) && (
+                    <FormDescription>
+                      Required: Provide clear details about what work needs to be completed.
+                    </FormDescription>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
@@ -420,7 +475,15 @@ export function CreateItemModal({
                 name="assigneeId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Assignee</FormLabel>
+                    <FormLabel>
+                      Assignee
+                      {['STORY', 'TASK', 'BUG'].includes(selectedType) && <span className="text-red-500"> *</span>}
+                    </FormLabel>
+                    {['STORY', 'TASK', 'BUG'].includes(selectedType) && (
+                      <FormDescription>
+                        Required: Select who will be responsible for completing this work.
+                      </FormDescription>
+                    )}
                     <FormControl>
                       <Combobox
                         options={(() => {
@@ -431,13 +494,13 @@ export function CreateItemModal({
                                 value: user.id.toString(),
                                 label: (() => {
                                   const name = user.fullName || user.username;
-                                  const username = user.fullName ? `@${user.username}` : '';
+                                  const username = user.fullName ? ` (@${user.username})` : '';
                                   let roleDisplay = '';
                                   
                                   if (user.role === 'ADMIN') {
-                                    roleDisplay = ' 👑 Admin';
+                                    roleDisplay = ' [Admin]';
                                   } else if (user.role === 'SCRUM_MASTER') {
-                                    roleDisplay = ' 🏅 Scrum Master';
+                                    roleDisplay = ' [Scrum Master]';
                                   }
                                   
                                   return `${name}${username}${roleDisplay}`;
@@ -521,7 +584,7 @@ export function CreateItemModal({
                 name="priority"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Priority</FormLabel>
+                    <FormLabel>Priority <span className="text-red-500">*</span></FormLabel>
                     <Select
                       value={field.value || "MEDIUM"}
                       onValueChange={field.onChange}
@@ -538,6 +601,9 @@ export function CreateItemModal({
                         <SelectItem value="CRITICAL">Critical</SelectItem>
                       </SelectContent>
                     </Select>
+                    <FormDescription className="text-xs text-gray-500">
+                      Select work item priority level (required for all types)
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

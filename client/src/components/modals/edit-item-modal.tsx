@@ -431,13 +431,13 @@ export function EditItemModal({
                           { value: "unassigned", label: "Unassigned" },
                           ...projectTeamMembers.map(user => {
                             const name = user.fullName || user.username;
-                            const username = user.fullName ? `@${user.username}` : '';
+                            const username = user.fullName ? ` (@${user.username})` : '';
                             let roleDisplay = '';
                             
                             if (user.role === 'ADMIN') {
-                              roleDisplay = '  Admin';
+                              roleDisplay = ' [Admin]';
                             } else if (user.role === 'SCRUM_MASTER') {
-                              roleDisplay = ' Scrum Master';
+                              roleDisplay = ' [Scrum Master]';
                             }
                             
                             return {

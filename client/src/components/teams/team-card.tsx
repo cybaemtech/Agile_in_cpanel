@@ -81,12 +81,14 @@ export function TeamCard({
             <div className="flex items-center min-w-0">
               <span className="mr-1 text-xs">By:</span>
               <Avatar className="h-4 w-4 mr-1 flex-shrink-0">
-                <AvatarImage src={creator.avatarUrl || undefined} alt={creator.fullName} />
+                <AvatarImage src={creator.avatarUrl || undefined} alt={creator.email} />
                 <AvatarFallback className="text-xs">
-                  {creator.fullName.split(' ').map(n => n[0]).join('')}
+                  {creator.email.substring(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
-              <span className="truncate text-xs">{creator.fullName}</span>
+              <span className="truncate text-xs" title={`${creator.fullName} (${creator.email})`}>
+                {creator.email}
+              </span>
             </div>
           )}
         </div>
