@@ -97,6 +97,26 @@ export function CreateItemModal({
   // Set default type based on user permissions - EPIC for admin/scrum, STORY for others
   const defaultType = isAdminOrScrum ? "EPIC" : "STORY";
   
+  // Set up the form first
+  const form = useForm<WorkItemFormValues>({
+    resolver: zodResolver(workItemFormSchema),
+    defaultValues: {
+      title: "",
+      description: "",
+      tags: "",
+      type: defaultType,
+      status: "TODO",
+      priority: "MEDIUM",
+      projectId: selectedProjectId,
+      parentId: null,
+      assigneeId: null,
+      reporterId: projectTeamMembers.length > 0 ? projectTeamMembers[0].id : 1, // Set current user as default reporter
+      estimate: "",
+      startDate: null,
+      endDate: null,
+    },
+  });
+
   // Update selected type when user role changes or component mounts
   React.useEffect(() => {
     if (currentUser) {
@@ -137,26 +157,6 @@ export function CreateItemModal({
         return [];
     }
   };
-
-  // Set up the form
-  const form = useForm<WorkItemFormValues>({
-    resolver: zodResolver(workItemFormSchema),
-    defaultValues: {
-      title: "",
-      description: "",
-      tags: "",
-      type: defaultType,
-      status: "TODO",
-      priority: "MEDIUM",
-      projectId: selectedProjectId,
-      parentId: null,
-      assigneeId: null,
-      reporterId: projectTeamMembers.length > 0 ? projectTeamMembers[0].id : 1, // Set current user as default reporter
-      estimate: "",
-      startDate: null,
-      endDate: null,
-    },
-  });
   
   const handleTypeChange = (value: string) => {
     setSelectedType(value);
@@ -489,7 +489,7 @@ export function CreateItemModal({
                         options={(() => {
                           const assigneeOptions = [
                             { value: "unassigned", label: "Unassigned" },
-                            ...projectTeamMembers.map(user => {
+                            ...projectTeamMembers.map((user: User) => {
                               const option = {
                                 value: user.id.toString(),
                                 label: (() => {
