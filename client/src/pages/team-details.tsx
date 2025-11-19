@@ -83,6 +83,8 @@ export default function TeamDetails() {
     queryKey: [`/teams/${teamId}/members`],
     queryFn: () => apiGet(`/teams/${teamId}/members`),
     enabled: !!teamId,
+    staleTime: 30 * 1000, // 30 seconds - refresh frequently to catch changes from project settings
+    refetchOnWindowFocus: true, // Refresh when user switches back to this tab
   });
   
   // Get team projects, but only show projects where current user is assigned (or is Admin/Scrum Master)

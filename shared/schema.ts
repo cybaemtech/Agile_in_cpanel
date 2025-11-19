@@ -71,6 +71,8 @@ export const projects = mysqlTable("projects", {
   description: text("description"),
   status: mysqlEnum("status", projectStatusOptions).notNull().default("ACTIVE"),
   createdBy: int("created_by").references(() => users.id, { onDelete: 'set null' }),
+  createdByName: varchar("createdByName", { length: 255 }),
+  createdByEmail: varchar("createdByEmail", { length: 255 }),
   teamId: int("team_id").references(() => teams.id, { onDelete: 'set null' }),
   startDate: timestamp("start_date"),
   targetDate: timestamp("target_date"),
@@ -99,7 +101,10 @@ export const workItems = mysqlTable("work_items", {
   parentId: int("parent_id"), // For hierarchy - self-reference
   assigneeId: int("assignee_id").references(() => users.id, { onDelete: 'set null' }), // Assigned to
   reporterId: int("reporter_id").references(() => users.id, { onDelete: 'set null' }), // Created by
+  createdByName: varchar("created_by_name", { length: 255 }), // Creator name for display
+  createdByEmail: varchar("created_by_email", { length: 255 }), // Creator email for display
   updatedBy: int("updated_by").references(() => users.id, { onDelete: 'set null' }), // Last updated by
+  updatedByName: varchar("updated_by_name", { length: 255 }), // Updater name for display
   estimate: decimal("estimate"), // Story points or hours as decimal for better querying
   startDate: timestamp("start_date"), // For timeline view
   endDate: timestamp("end_date"), // For timeline view

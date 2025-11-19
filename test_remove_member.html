@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Member Removal</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .remove-btn {
+            background-color: #dc3545;
+        }
+        .remove-btn:hover {
+            background-color: #c82333;
+        }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        .info { color: #17a2b8; }
+    </style>
+</head>
+<body>
+    <h1>Team Member Removal Debug Tool</h1>
+    
+    <div class="form-group">
+        <label for="teamId">Team ID:</label>
+        <input type="number" id="teamId" placeholder="Enter team ID" value="1">
+    </div>
+    
+    <div class="form-group">
+        <label for="userId">User ID to Remove:</label>
+        <input type="number" id="userId" placeholder="Enter user ID to remove" value="2">
+    </div>
+    
+    <button onclick="checkAuth()">Check Authentication</button>
+    <button onclick="getTeamMembers()">Get Team Members</button>
+    <button onclick="removeMember()" class="remove-btn">Remove Team Member</button>
+    <button onclick="clearLog()">Clear Log</button>
+    
+    <div id="log" class="log">Ready to test member removal...\n</div>
+
+    <script>
+        const API_BASE = '/api'; // Adjust if needed
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logElement = document.getElementById('log');
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info';
+            logElement.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+        
+        async function apiRequest(method, url, body = null) {
+            const config = {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include', // Include session cookies
+            };
+            
+            if (body) {
+                config.body = JSON.stringify(body);
+            }
+            
+            log(`Making ${method} request to: ${url}`, 'info');
+            
+            try {
+                const response = await fetch(url, config);
+                
+                log(`Response Status: ${response.status} ${response.statusText}`, 
+                    response.ok ? 'success' : 'error');
+                
+                let responseData;
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    responseData = await response.json();
+                } else {
+                    responseData = await response.text();
+                }
+                
+                log(`Response Data: ${JSON.stringify(responseData, null, 2)}`, 
+                    response.ok ? 'success' : 'error');
+                
+                return { response, data: responseData };
+            } catch (error) {
+                log(`Network Error: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+        
+        async function checkAuth() {
+            try {
+                const result = await apiRequest('GET', `${API_BASE}/users/me`);
+                if (result.response.ok) {
+                    log(`✓ Authenticated as: ${JSON.stringify(result.data)}`, 'success');
+                } else {
+                    log(`✗ Authentication failed`, 'error');
+                }
+            } catch (error) {
+                log(`✗ Auth check failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function getTeamMembers() {
+            const teamId = document.getElementById('teamId').value;
+            if (!teamId) {
+                log('Please enter a team ID', 'error');
+                return;
+            }
+            
+            try {
+                const result = await apiRequest('GET', `${API_BASE}/teams/${teamId}/members`);
+                if (result.response.ok) {
+                    log(`✓ Team ${teamId} members: ${JSON.stringify(result.data, null, 2)}`, 'success');
+                } else {
+                    log(`✗ Failed to get team members`, 'error');
+                }
+            } catch (error) {
+                log(`✗ Get members failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function removeMember() {
+            const teamId = document.getElementById('teamId').value;
+            const userId = document.getElementById('userId').value;
+            
+            if (!teamId || !userId) {
+                log('Please enter both team ID and user ID', 'error');
+                return;
+            }
+            
+            log(`Attempting to remove user ${userId} from team ${teamId}...`, 'info');
+            
+            try {
+                const result = await apiRequest('DELETE', `${API_BASE}/teams/${teamId}/members/${userId}`);
+                
+                if (result.response.ok) {
+                    log(`✓ Successfully removed user ${userId} from team ${teamId}`, 'success');
+                    // Refresh team members list
+                    setTimeout(getTeamMembers, 1000);
+                } else {
+                    log(`✗ Failed to remove member. Status: ${result.response.status}`, 'error');
+                    if (result.data.message) {
+                        log(`Error message: ${result.data.message}`, 'error');
+                    }
+                }
+            } catch (error) {
+                log(`✗ Remove member request failed: ${error.message}`, 'error');
+            }
+        }
+        
+        // Auto-check auth on page load
+        window.onload = function() {
+            setTimeout(checkAuth, 1000);
+        };
+    </script>
+</body>
+</html>

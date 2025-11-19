@@ -124,13 +124,10 @@ export function CreateItemModal({
       if (!allowedTypes.includes(selectedType)) {
         setSelectedType(defaultType);
         form.setValue("type", defaultType);
-      } else if (selectedType === "STORY" && isAdminOrScrum) {
-        // If admin/scrum is on default STORY, switch to EPIC
-        setSelectedType(defaultType);
-        form.setValue("type", defaultType);
       }
+      // Remove the automatic STORY to EPIC switching for admin/scrum
     }
-  }, [currentUser, allowedTypes, selectedType, defaultType, isAdminOrScrum, form]);
+  }, [currentUser, allowedTypes, selectedType, defaultType, form]);
   
   // Initialize with correct type when modal opens
   React.useEffect(() => {
@@ -189,8 +186,8 @@ export function CreateItemModal({
         return;
       }
       
-      // Validation: Story, Task, Bug must have description
-      if (['STORY', 'TASK', 'BUG'].includes(data.type) && (!data.description || data.description.trim() === '')) {
+      // Validation: Story and Bug must have description (Task is optional)
+      if (['STORY', 'BUG'].includes(data.type) && (!data.description || data.description.trim() === '')) {
         toast({
           title: "Description Required",
           description: `${data.type.charAt(0) + data.type.slice(1).toLowerCase()}s must have a description. Please provide details about the work to be done.`,
@@ -302,15 +299,15 @@ export function CreateItemModal({
         
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 py-4">
-            <div className="mb-4">
-              <FormLabel className="block text-sm font-medium text-neutral-700 mb-1">Item Type</FormLabel>
-              <div className="flex flex-wrap gap-2">
+            <div className="mb-6">
+              <FormLabel className="block text-sm font-medium text-neutral-700 mb-3">Item Type</FormLabel>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 {allowedTypes.map(type => (
                   <Button
                     key={type}
                     type="button"
                     variant={selectedType === type ? "default" : "outline"}
-                    className="py-2 h-9 min-w-[90px]"
+                    className="py-3 px-4 h-12 w-full text-sm font-normal transition-all duration-200 hover:scale-[1.02] focus:ring-2 focus:ring-primary/20 focus:ring-offset-1 border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=checked]:font-medium"
                     onClick={() => handleTypeChange(type)}
                   >
                     {type.charAt(0) + type.slice(1).toLowerCase()}
@@ -333,33 +330,36 @@ export function CreateItemModal({
               )}
             />
             
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    Description
-                    {['STORY', 'TASK', 'BUG'].includes(selectedType) && <span className="text-red-500"> *</span>}
-                  </FormLabel>
-                  <FormControl>
-                    <Textarea 
-                      {...field} 
-                      placeholder={`Enter ${selectedType.toLowerCase()} description - describe what needs to be done`}
-                      value={field.value || ""}
-                      rows={3}
-                      required={['STORY', 'TASK', 'BUG'].includes(selectedType)}
-                    />
-                  </FormControl>
-                  {['STORY', 'TASK', 'BUG'].includes(selectedType) && (
-                    <FormDescription>
-                      Required: Provide clear details about what work needs to be completed.
-                    </FormDescription>
-                  )}
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {/* Hide description field for TASK type - Tasks are meant to be simple, actionable items with self-explanatory titles */}
+            {selectedType !== 'TASK' && (
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      Description
+                      {['STORY', 'BUG'].includes(selectedType) && <span className="text-red-500"> *</span>}
+                    </FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        {...field} 
+                        placeholder={`Enter ${selectedType.toLowerCase()} description - describe what needs to be done`}
+                        value={field.value || ""}
+                        rows={3}
+                        required={['STORY', 'BUG'].includes(selectedType)}
+                      />
+                    </FormControl>
+                    {['STORY', 'BUG'].includes(selectedType) && (
+                      <FormDescription>
+                        Required: Provide clear details about what work needs to be completed.
+                      </FormDescription>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
             
             {/* Tags field - only show for Stories */}
             {selectedType === "STORY" && (
@@ -451,7 +451,7 @@ export function CreateItemModal({
                             { value: "none", label: "None" },
                             ...getValidParents().map(item => ({
                               value: item.id.toString(),
-                              label: `${item.title} (${item.externalId})`
+                              label: `${item.externalId}: ${item.title}${item.description ? ` - ${item.description.substring(0, 50)}${item.description.length > 50 ? '...' : ''}` : ''}`
                             }))
                           ]}
                           value={field.value?.toString() || "none"}

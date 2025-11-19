@@ -150,20 +150,44 @@ export function ProjectCard({
             {formatDate(new Date(project.createdAt))}
           </div>
           
-          {creator && (
-            <div className="flex items-center">
-              <span className="mr-1">Created by:</span>
-              <Avatar className="h-5 w-5 mr-1">
-                <AvatarImage src={creator.avatarUrl || undefined} alt={creator.email} />
-                <AvatarFallback className="text-xs">
-                  {creator.email.substring(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <span className="text-sm" title={`${creator.fullName} (${creator.email})`}>
-                {creator.email}
-              </span>
-            </div>
-          )}
+          <div className="flex items-center">
+            <span className="mr-1">Created by:</span>
+            <Avatar className="h-5 w-5 mr-1">
+              <AvatarFallback className="text-xs">
+                {(() => {
+                  // Use creator if available, otherwise use project's stored creator info
+                  if (creator) {
+                    return creator.email.substring(0, 2).toUpperCase();
+                  }
+                  const email = project.createdByEmail || '';
+                  const name = project.createdByName || '';
+                  const displayText = email !== 'unknown@example.com' ? email : (name !== 'Unknown User' ? name : 'U');
+                  return displayText.substring(0, 2).toUpperCase();
+                })()}
+              </AvatarFallback>
+            </Avatar>
+            <span className="text-sm" title={(() => {
+              if (creator) {
+                return `${creator.fullName} (${creator.email})`;
+              }
+              const email = project.createdByEmail || '';
+              const name = project.createdByName || '';
+              if (email !== 'unknown@example.com') return email;
+              if (name !== 'Unknown User') return name;
+              return 'Unknown User';
+            })()}>
+              {(() => {
+                if (creator) {
+                  return creator.email;
+                }
+                const email = project.createdByEmail || '';
+                const name = project.createdByName || '';
+                if (email !== 'unknown@example.com') return email;
+                if (name !== 'Unknown User') return name;
+                return 'Unknown User';
+              })()}
+            </span>
+          </div>
         </div>
         
         <div className="grid grid-cols-5 gap-2 text-xs">

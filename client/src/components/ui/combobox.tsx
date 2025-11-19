@@ -112,7 +112,7 @@ export function Combobox({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+      <PopoverContent className="w-[400px] max-w-[90vw] p-0" align="start">
         <Command shouldFilter={false}>
           <CommandInput 
             placeholder={searchPlaceholder} 
@@ -127,7 +127,7 @@ export function Combobox({
                   key={option.value}
                   value={option.value}
                   disabled={option.disabled}
-                  className="flex items-center justify-between cursor-pointer"
+                  className="flex items-start justify-between cursor-pointer min-h-[2.5rem] py-2 px-3"
                   onSelect={(currentValue) => {
                     // Handle selection
                     if (currentValue === value) {
@@ -140,14 +140,14 @@ export function Combobox({
                     setSearchValue("") // Clear search when selecting
                   }}
                 >
-                  <div className="flex items-center">
+                  <div className="flex items-center w-full">
                     <Check
                       className={cn(
-                        "mr-2 h-4 w-4",
+                        "mr-2 h-4 w-4 shrink-0",
                         value === option.value ? "opacity-100" : "opacity-0"
                       )}
                     />
-                    <span className="truncate">{option.label}</span>
+                    <span className="text-sm leading-relaxed break-words whitespace-normal">{option.label}</span>
                   </div>
                 </CommandItem>
               ))}

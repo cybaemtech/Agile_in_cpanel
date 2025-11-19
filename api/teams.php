@@ -2,7 +2,16 @@
 require_once 'config/cors.php';
 require_once 'config/database.php';
 
+// Add debugging to see what's happening
+error_log("=== TEAMS API START ===");
+error_log("REQUEST_METHOD: " . $_SERVER['REQUEST_METHOD']);
+error_log("REQUEST_URI: " . $_SERVER['REQUEST_URI']);
+error_log("AGILE_API_PATH: " . ($_SERVER['AGILE_API_PATH'] ?? 'NOT SET'));
+error_log("PATH_INFO: " . ($_SERVER['PATH_INFO'] ?? 'NOT SET'));
+
 session_start();
+
+error_log("SESSION USER_ID: " . ($_SESSION['user_id'] ?? 'NOT SET'));
 
 $database = new Database();
 $conn = $database->getConnection();
@@ -26,20 +35,28 @@ $path = $_SERVER['AGILE_API_PATH'] ?? ($_SERVER['PATH_INFO'] ?? '/');
 $path = rtrim($path, '/');
 if ($path === '') $path = '/';
 
+error_log("PARSED PATH: " . $path);
+error_log("METHOD: " . $method);
+error_log("SWITCH CASE: " . $method . ':' . $path);
+
 switch ($method . ':' . $path) {
     case 'GET:':
     case 'GET:/':
+        error_log("ROUTING: getTeams");
         getTeams($conn);
         break;
     
     case 'POST:':
     case 'POST:/':
+        error_log("ROUTING: createTeam");
         createTeam($conn);
         break;
     
     default:
+        error_log("ROUTING: Checking patterns for path: $path");
         if (preg_match('/^\/(\d+)$/', $path, $matches)) {
             $teamId = $matches[1];
+            error_log("ROUTING: Single team pattern matched, teamId: $teamId, method: $method");
             if ($method === 'GET') {
                 getTeam($conn, $teamId);
             } elseif ($method === 'DELETE') {
@@ -47,6 +64,7 @@ switch ($method . ':' . $path) {
             }
         } elseif (preg_match('/^\/(\d+)\/members$/', $path, $matches)) {
             $teamId = $matches[1];
+            error_log("ROUTING: Team members pattern matched, teamId: $teamId, method: $method");
             if ($method === 'GET') {
                 getTeamMembers($conn, $teamId);
             } elseif ($method === 'POST') {
@@ -55,14 +73,16 @@ switch ($method . ':' . $path) {
         } elseif (preg_match('/^\/(\d+)\/members\/(\d+)$/', $path, $matches)) {
             $teamId = $matches[1];
             $userId = $matches[2];
+            error_log("ROUTING: Specific team member pattern matched, teamId: $teamId, userId: $userId, method: $method");
             if ($method === 'DELETE') {
                 removeTeamMember($conn, $teamId, $userId);
             } elseif ($method === 'PATCH') {
                 updateTeamMemberRole($conn, $teamId, $userId);
             }
         } else {
+            error_log("ROUTING: No pattern matched for path: $path");
             http_response_code(404);
-            echo json_encode(['message' => 'Endpoint not found']);
+            echo json_encode(['message' => 'Endpoint not found', 'path' => $path, 'method' => $method]);
         }
         break;
 }
@@ -265,50 +285,104 @@ function addTeamMember($conn, $teamId) {
 }
 
 function removeTeamMember($conn, $teamId, $userId) {
+    // Log the incoming request
+    error_log("=== removeTeamMember START ===");
+    error_log("teamId: $teamId, userId: $userId");
+    error_log("session user_id: " . ($_SESSION['user_id'] ?? 'NOT SET'));
+    
+    // Validate inputs
+    if (!is_numeric($teamId) || !is_numeric($userId)) {
+        error_log("removeTeamMember: Invalid input - teamId: $teamId, userId: $userId");
+        http_response_code(400);
+        echo json_encode(['message' => 'Invalid team ID or user ID']);
+        return;
+    }
+    
     if (!isset($_SESSION['user_id'])) {
+        error_log("removeTeamMember: User not authenticated");
         http_response_code(401);
         echo json_encode(['message' => 'Not authenticated']);
         return;
     }
     
     // Check if user has admin or scrum master role
-    $stmt = $conn->prepare("SELECT user_role FROM users WHERE id = ?");
-    $stmt->execute([$_SESSION['user_id']]);
-    $user = $stmt->fetch();
-    
-    if (!$user || !in_array($user['user_role'], ['ADMIN', 'SCRUM_MASTER'])) {
-        http_response_code(403);
-        echo json_encode(['message' => 'Only administrators or scrum masters can remove team members']);
-        return;
-    }
-    
     try {
+        $stmt = $conn->prepare("SELECT user_role FROM users WHERE id = ?");
+        $stmt->execute([$_SESSION['user_id']]);
+        $user = $stmt->fetch();
+        
+        error_log("removeTeamMember: Current user role: " . ($user['user_role'] ?? 'NOT FOUND'));
+        
+        if (!$user || !in_array($user['user_role'], ['ADMIN', 'SCRUM_MASTER'])) {
+            error_log("removeTeamMember: Permission denied for role: " . ($user['user_role'] ?? 'NOT FOUND'));
+            http_response_code(403);
+            echo json_encode(['message' => 'Only administrators or scrum masters can remove team members']);
+            return;
+        }
+        
+        // First check if team exists
+        $stmt = $conn->prepare("SELECT id, name FROM teams WHERE id = ?");
+        $stmt->execute([$teamId]);
+        $team = $stmt->fetch();
+        
+        if (!$team) {
+            error_log("removeTeamMember: Team $teamId does not exist");
+            http_response_code(404);
+            echo json_encode(['message' => 'Team not found']);
+            return;
+        }
+        
+        error_log("removeTeamMember: Working with team: {$team['name']} (ID: {$team['id']})");
+        
         // Check if team member exists
-        $stmt = $conn->prepare("SELECT id FROM team_members WHERE team_id = ? AND user_id = ?");
+        $stmt = $conn->prepare("SELECT tm.id, u.full_name FROM team_members tm LEFT JOIN users u ON tm.user_id = u.id WHERE tm.team_id = ? AND tm.user_id = ?");
         $stmt->execute([$teamId, $userId]);
         $member = $stmt->fetch();
         
+        error_log("removeTeamMember: Team member query result: " . json_encode($member));
+        
         if (!$member) {
+            error_log("removeTeamMember: Team member not found in database");
             http_response_code(404);
             echo json_encode(['message' => 'Team member not found']);
             return;
         }
         
+        error_log("removeTeamMember: Found member to remove: {$member['full_name']} (member_id: {$member['id']})");
+        
         // Remove team member
         $stmt = $conn->prepare("DELETE FROM team_members WHERE team_id = ? AND user_id = ?");
         $stmt->execute([$teamId, $userId]);
+        $rowCount = $stmt->rowCount();
         
-        if ($stmt->rowCount() > 0) {
-            echo json_encode(['message' => 'Team member removed successfully']);
+        error_log("removeTeamMember: DELETE affected $rowCount rows");
+        
+        if ($rowCount > 0) {
+            error_log("removeTeamMember: SUCCESS - Team member removed");
+            echo json_encode([
+                'message' => 'Team member removed successfully',
+                'removed_member' => $member['full_name'],
+                'team_name' => $team['name']
+            ]);
         } else {
-            http_response_code(404);
-            echo json_encode(['message' => 'Team member not found']);
+            error_log("removeTeamMember: DELETE failed - no rows affected");
+            http_response_code(500);
+            echo json_encode(['message' => 'Failed to remove team member']);
         }
         
     } catch (PDOException $e) {
+        error_log("removeTeamMember: Database error: " . $e->getMessage());
+        error_log("removeTeamMember: SQL Error Code: " . $e->getCode());
+        error_log("removeTeamMember: Full exception: " . $e);
         http_response_code(500);
-        echo json_encode(['message' => 'Internal server error']);
+        echo json_encode(['message' => 'Database error occurred']);
+    } catch (Exception $e) {
+        error_log("removeTeamMember: General error: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(['message' => 'An error occurred while removing team member']);
     }
+    
+    error_log("=== removeTeamMember END ===");
 }
 
 function updateTeamMemberRole($conn, $teamId, $userId) {
